@@ -143,6 +143,16 @@
 .ap-status-orange { background: #faf1e2; color: #b0700f; }
 .ap-status-red { background: #f9e9e7; color: #c0392b; }
 
+.ap-coef {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eef1f7;
+  color: #5a6480;
+  white-space: nowrap;
+}
+
 .ap-settings {
   display: flex;
   align-items: center;

@@ -180,6 +180,53 @@
     return (l.label && l.label.fr) || (l.defaultLabel && l.defaultLabel.fr) || "";
   }
 
+  // --------------------------------------------------------- coefficients
+  // Each obligation exposes obligationRelations[].coefficient = weight of a child
+  // within its parent. We fetch /api/obligations once (replaying the app's auth),
+  // extract every child→coef, and cache it. These weights reproduce Auriga's own
+  // averages exactly, so they also power an accurate what-if simulator.
+  var COEFS = {};
+  var coefLoading = false;
+
+  function readCoefCache() {
+    try {
+      var o = JSON.parse(localStorage.getItem("capella.coefs") || "null");
+      if (o && o.map && Date.now() - o.t < 3 * 864e5) return o.map;
+    } catch (e) {}
+    return null;
+  }
+  function writeCoefCache(map) {
+    try { localStorage.setItem("capella.coefs", JSON.stringify({ t: Date.now(), map: map })); } catch (e) {}
+  }
+  async function loadCoefficients() {
+    if (Object.keys(COEFS).length) return false;
+    var cached = readCoefCache();
+    if (cached) { COEFS = cached; return false; }
+    if (!store.auth || coefLoading) return false;
+    coefLoading = true;
+    var map = {};
+    try {
+      for (var page = 1; page <= 3; page++) {
+        var r = await fetch("/api/obligations?size=2000&page=" + page, {
+          headers: { Authorization: store.auth, Accept: "application/json" },
+          credentials: "include",
+        });
+        if (!r.ok) break;
+        var j = await r.json();
+        (j.content || []).forEach(function (o) {
+          (o.obligationRelations || []).forEach(function (rel) {
+            var ch = (rel.obligationChild || {}).code;
+            if (ch && rel.coefficient != null) map[ch] = rel.coefficient;
+          });
+        });
+        if (!j.totalPages || j.currentPage >= j.totalPages) break;
+      }
+    } catch (e) { console.warn("[Capella] coef fetch failed", e); coefLoading = false; return false; }
+    coefLoading = false;
+    if (Object.keys(map).length) { COEFS = map; writeCoefCache(map); return true; }
+    return false;
+  }
+
   // ------------------------------------------------------------- parse data
   function parse() {
     var model = { name: "", year: "", semesters: [], hasTree: false, hasExams: false };
@@ -262,7 +309,7 @@
       if (!ex || (ex.value == null && r.value != null)) byCode[r.code] = r;
     });
     var nodes = Object.keys(byCode).map(function (c) {
-      return { code: c, name: byCode[c].name, value: byCode[c].value, kind: byCode[c].kind, children: [], exams: [] };
+      return { code: c, name: byCode[c].name, value: byCode[c].value, kind: byCode[c].kind, coef: COEFS[c], children: [], exams: [] };
     });
     nodes.sort(function (a, b) { return a.code < b.code ? -1 : 1; });
 
@@ -357,6 +404,7 @@
     var caret = el("span", { class: "ap-caret", text: hasKids ? "▾" : "" });
     row.appendChild(caret);
     row.appendChild(el("span", { class: "ap-node-name", text: node.name || node.code }));
+    if (node.coef != null) row.appendChild(el("span", { class: "ap-coef", text: "coef " + fmt(node.coef) }));
     var isUE = depth === 1 && node.children.length;
     var st = isUE ? ueStatus(node.value) : moduleStatus(node.value);
     if (st) row.appendChild(el("span", { class: "ap-status ap-status-" + st.c, text: st.t }));
@@ -572,6 +620,7 @@
     };
     document.body.appendChild(fab);
 
+    COEFS = readCoefCache() || {};
     build(parseSafe());
 
     function maybeAutoOpen() {
@@ -579,16 +628,21 @@
       if (sessionStorage.getItem("apDismissed") === "1") return;
       if (parseSafe().hasTree && !root.classList.contains("ap-open")) root.classList.add("ap-open");
     }
+    function ensureCoefs() {
+      loadCoefficients().then(function (changed) { if (changed && root) rerender(); });
+    }
 
     // Re-render as the app loads more data; auto-open only when grades exist.
     window.addEventListener("auriga-plus:capture", function () {
       try {
         if (root && root.classList.contains("ap-open")) rerender();
         maybeAutoOpen();
+        ensureCoefs();
       } catch (e) { console.warn("[Capella]", e); }
     });
 
     maybeAutoOpen();
+    ensureCoefs();
     console.log("%c[Capella] UI ready", "color:#1a2b6b;font-weight:bold");
   } catch (e) {
     console.warn("[Capella] init failed (Auriga left untouched):", e);
