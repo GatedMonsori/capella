@@ -202,6 +202,7 @@
   margin-top: 18px;
 }
 .ap-card h2 { font-size: 15px; margin: 0 0 12px; color: #1a2b6b; }
+.ap-muted { color: #7a839c; font-size: 13px; margin: 6px 0; }
 .ap-gloss-head { font-weight: 600; color: #1a2b6b; cursor: pointer; padding: 4px 0; }
 .ap-gloss-body { margin-top: 10px; }
 table.ap-table { width: 100%; border-collapse: collapse; font-size: 13px; }

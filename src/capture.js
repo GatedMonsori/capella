@@ -15,7 +15,11 @@
     responses: [],
     // responses that look grade-related, keyed by url
     grades: [],
-    version: "0.1.0",
+    // most recent Authorization header seen on an /api/ request (Bearer token).
+    // Used by the coefficient probe to replay authenticated requests. Tokens are
+    // short-lived, so we always keep the latest.
+    auth: null,
+    version: "1.0.0",
   };
   window.__AURIGA_PLUS__ = store;
 
@@ -90,12 +94,24 @@
     return scan(json, 0);
   }
 
+  function grabAuth(input, init) {
+    try {
+      var h = (init && init.headers) || (input && input.headers);
+      if (!h) return;
+      var v = null;
+      if (typeof h.get === "function") v = h.get("Authorization") || h.get("authorization");
+      else for (var k in h) if (String(k).toLowerCase() === "authorization") v = h[k];
+      if (v) store.auth = v;
+    } catch (e) {}
+  }
+
   // ---- Hook fetch ----
   const origFetch = window.fetch;
   if (origFetch) {
     window.fetch = function (input, init) {
       const url = typeof input === "string" ? input : (input && input.url) || "";
       const method = (init && init.method) || (input && input.method) || "GET";
+      grabAuth(input, init);
       return origFetch.apply(this, arguments).then((res) => {
         try {
           res
@@ -114,6 +130,11 @@
   if (XHR) {
     const open = XHR.prototype.open;
     const send = XHR.prototype.send;
+    const setHeader = XHR.prototype.setRequestHeader;
+    XHR.prototype.setRequestHeader = function (name, value) {
+      if (String(name).toLowerCase() === "authorization" && value) store.auth = value;
+      return setHeader.apply(this, arguments);
+    };
     XHR.prototype.open = function (method, url) {
       this.__ap_method = method;
       this.__ap_url = url;

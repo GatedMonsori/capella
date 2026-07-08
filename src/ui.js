@@ -419,8 +419,58 @@
     return panel;
   }
 
+  // Try likely endpoints for the obligation tree with coefficients, replaying the
+  // page's own auth. Dumps results so we can find where module→UE coefs live.
+  function shapeOf(j) {
+    if (j == null) return "null";
+    if (Array.isArray(j)) return "Array(" + j.length + ")";
+    if (typeof j === "object") return "{ " + Object.keys(j).slice(0, 14).join(", ") + " }";
+    return typeof j;
+  }
+  async function probeCoefficients() {
+    var candidates = [
+      "/api/viewObligationTrees?size=2000&page=1",
+      "/api/viewObligationTrees?size=2000&page=1&sort=code",
+      "/api/obligations?size=2000&page=1",
+      "/api/obligationRelations?size=2000&page=1",
+      "/api/obligationTrees?size=2000&page=1",
+    ];
+    var headers = { Accept: "application/json" };
+    if (store.auth) headers.Authorization = store.auth;
+    var out = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var u = candidates[i];
+      try {
+        var r = await fetch(u, { headers: headers, credentials: "include" });
+        var txt = await r.text();
+        var j = null;
+        try { j = JSON.parse(txt); } catch (e) {}
+        out.push({ url: u, status: r.status, shape: j ? shapeOf(j) : txt.slice(0, 200), sample: j });
+      } catch (e) {
+        out.push({ url: u, error: String(e) });
+      }
+    }
+    console.log("%c[Capella] probe results", "color:#1a2b6b;font-weight:bold", out);
+    copy(JSON.stringify(out, null, 2));
+    toast("Sondage terminé — résultats copiés");
+    return out;
+  }
+
   function buildDebugPanel() {
     var panel = el("div", { class: "ap-panel", "data-panel": "debug" });
+
+    var probe = el("div", { class: "ap-card" });
+    probe.appendChild(el("h2", { text: "Chercher les coefficients (module → UE)" }));
+    probe.appendChild(el("p", { class: "ap-muted", html:
+      "Teste les endpoints probables de l'arbre des obligations en réutilisant ta session. " +
+      "Clique, puis colle-moi le résultat (auto-copié) pour que j'intègre les coefficients." }));
+    var pb = el("button", { class: "ap-btn", text: "🔍 Sonder les coefficients" });
+    pb.onclick = function () { probeCoefficients(); };
+    probe.appendChild(pb);
+    probe.appendChild(el("div", { class: "ap-muted", style: "margin-top:8px", text:
+      "Token capté : " + (store.auth ? "oui" : "pas encore (navigue un peu dans Auriga puis réessaie)") }));
+    panel.appendChild(probe);
+
     var card = el("div", { class: "ap-card" });
     card.appendChild(el("h2", { text: "Données brutes captées (" + store.responses.length + ")" }));
     var b = el("button", { class: "ap-btn", text: "Tout copier (JSON)" });
