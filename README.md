@@ -24,7 +24,7 @@ Quand tu ouvres Auriga, l'interface **s'affiche automatiquement par-dessus**. Si
 - Glossaire de traduction des termes Auriga (« Composant pédagogique » → « Module », etc.).
 - Bouton **↻ Recharger**, **✕ Auriga original** (revenir à l'interface d'origine), onglet **Debug** (export JSON brut).
 
-> Les moyennes affichées sont **celles calculées par Auriga**, pas des recalculs — donc fiables. Les ECTS/GPA ne sont pas fournis par ces endpoints, donc non affichés (pas d'invention).
+> Les moyennes affichées sont **celles calculées par Auriga**, pas des recalculs — donc fiables. Les **coefficients** (ECUE) et **ECTS** (UE) proviennent de `/api/obligations` (`obligationRelations[].coefficient`) et ont été **vérifiés au bulletin officiel** (syllabus S5/S6) : correspondance exacte. Le poids d'une UE dans le semestre = ses crédits ECTS. Le GPA n'est pas fourni par ces endpoints, donc non affiché.
 
 ## Installation (mode développeur)
 

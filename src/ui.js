@@ -385,6 +385,16 @@
       var titles = el("div", {});
       titles.appendChild(el("div", { class: "ap-sem-title", text: node.name || node.code }));
       titles.appendChild(el("div", { class: "ap-sem-sub", text: node.kind === "finale" ? "Moyenne finale" : "Moyenne provisoire (semestre en cours)" }));
+      // ECTS: total = sum of UE weights; acquis = UEs with avg ≥ seuil UE and no ECUE below seuil matière.
+      var totalECTS = node.children.reduce(function (s, c) { return s + (toNum(c.coef) || 0); }, 0);
+      if (totalECTS) {
+        var acqECTS = node.children.reduce(function (s, c) {
+          var n = toNum(c.value);
+          var okChildren = c.children.every(function (m) { var mn = toNum(m.value); return isNaN(mn) || mn >= S.moduleThreshold; });
+          return s + (!isNaN(n) && n >= S.ueThreshold && okChildren ? (toNum(c.coef) || 0) : 0);
+        }, 0);
+        titles.appendChild(el("div", { class: "ap-sem-ects", text: "ECTS : " + acqECTS + " / " + totalECTS + " validés" }));
+      }
       head.appendChild(titles);
       var big = el("div", { class: "ap-sem-avg" });
       big.style.color = gradeColor(node.value);
@@ -404,8 +414,11 @@
     var caret = el("span", { class: "ap-caret", text: hasKids ? "▾" : "" });
     row.appendChild(caret);
     row.appendChild(el("span", { class: "ap-node-name", text: node.name || node.code }));
-    if (node.coef != null) row.appendChild(el("span", { class: "ap-coef", text: "coef " + fmt(node.coef) }));
     var isUE = depth === 1 && node.children.length;
+    // A UE's weight within the semester equals its ECTS credits; deeper nodes
+    // (ECUE / modules) carry an internal coefficient.
+    if (node.coef != null)
+      row.appendChild(el("span", { class: "ap-coef", text: isUE ? fmt(node.coef) + " ECTS" : "coef " + fmt(node.coef) }));
     var st = isUE ? ueStatus(node.value) : moduleStatus(node.value);
     if (st) row.appendChild(el("span", { class: "ap-status ap-status-" + st.c, text: st.t }));
     row.appendChild(pill(node.value, node.kind));
