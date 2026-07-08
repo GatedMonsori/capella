@@ -390,7 +390,7 @@
 
     var header = el("div", { class: "ap-header" });
     var brand = el("div", {});
-    brand.appendChild(el("h1", { text: "Auriga+" }));
+    brand.appendChild(el("h1", { text: "Capella" }));
     brand.appendChild(el("span", { class: "ap-sub", text: (model.name || "") + (model.year ? " · " + model.year : "") }));
     header.appendChild(brand);
     header.appendChild(el("div", { class: "ap-spacer" }));
@@ -476,7 +476,7 @@
   }
 
   // ------------------------------------------------------------------ init
-  var fab = el("button", { id: "auriga-plus-fab", text: "Auriga+" });
+  var fab = el("button", { id: "auriga-plus-fab", text: "Capella" });
   fab.onclick = function () {
     sessionStorage.removeItem("apDismissed");
     if (!parse().hasTree) loadAndRender(true);
@@ -500,5 +500,5 @@
     }
   }
 
-  console.log("%c[Auriga+] UI ready", "color:#1a2b6b;font-weight:bold");
+  console.log("%c[Capella] UI ready", "color:#1a2b6b;font-weight:bold");
 })();

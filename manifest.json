@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Auriga+",
-  "version": "0.1.0",
-  "description": "Une interface claire et lisible par-dessus Auriga (Aurion) : notes, moyennes, ECTS, libellés compréhensibles.",
+  "name": "Capella",
+  "version": "1.0.0",
+  "description": "Capella — une interface claire et lisible par-dessus Auriga (Aurion) d'EPITA : notes, moyennes, coefficients, libellés compréhensibles.",
   "content_scripts": [
     {
       "matches": ["https://auriga.epita.fr/*"],

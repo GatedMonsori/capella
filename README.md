@@ -1,4 +1,6 @@
-# Auriga+
+# Capella
+
+> *Capella est l'étoile la plus brillante de la constellation **Auriga** (le Cocher) — de quoi éclairer Auriga.*
 
 Extension Chrome qui remplace l'affichage des notes d'**Auriga** (plateforme Aurion d'EPITA) par une interface claire : arborescence semestre → UE → module avec les moyennes, et chaque épreuve rangée sous son module avec son type et son coefficient. Libellés Auriga traduits en français lisible.
 

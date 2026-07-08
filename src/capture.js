@@ -140,15 +140,15 @@
 
   // Console helper so the user can copy captured data easily.
   store.dump = function () {
-    console.log("%c[Auriga+] captured responses", "color:#3355ff;font-weight:bold");
+    console.log("%c[Capella] captured responses", "color:#3355ff;font-weight:bold");
     console.log(store.responses);
     return store.responses;
   };
   store.dumpGrades = function () {
-    console.log("%c[Auriga+] grade-like responses", "color:#3355ff;font-weight:bold");
+    console.log("%c[Capella] grade-like responses", "color:#3355ff;font-weight:bold");
     console.log(store.grades);
     return store.grades;
   };
 
-  console.log("%c[Auriga+] capture installed", "color:#3355ff;font-weight:bold");
+  console.log("%c[Capella] capture installed", "color:#3355ff;font-weight:bold");
 })();
