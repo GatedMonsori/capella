@@ -147,12 +147,14 @@
     return "#f9e9e7";
   }
 
-  // Normalise a code so exam codes and module codes line up.
-  // Module:  2526_BSI_CYBER_FISA_S05_CYBER_BK       -> 2526_BSI_CYBER_S05_CYBER_BK
-  // Exam:    2526_BSI_CYBER_S05_CYBER_BK_FISA_EXA_1 -> 2526_BSI_CYBER_S05_CYBER_BK
+  // Normalise a code so exam codes and module codes line up, program-agnostic.
+  // Removes the study-track token (FISA/FISE/…) wherever it sits and strips a
+  // trailing exam-type suffix, so both sides collapse to the same module path.
+  //   Module: 2526_BSI_CYBER_FISA_S05_CYBER_BK        -> 2526_BSI_CYBER_S05_CYBER_BK
+  //   Exam:   2526_BSI_CYBER_S05_CYBER_BK_FISA_EXA_1  -> 2526_BSI_CYBER_S05_CYBER_BK
   function normCode(c) {
     return String(c || "")
-      .replace("_FISA", "")
+      .replace(/_(FISA|FISE|FISEA|APP)(?=_|$)/gi, "")
       .replace(/_(EXA|EXF|EXO|EXP|FAF|RATT|QCM|CC)(_\d+)?$/i, "");
   }
 
@@ -161,6 +163,27 @@
     for (var i = store.responses.length - 1; i >= 0; i--) {
       var r = store.responses[i];
       if (r.url && r.url.indexOf(urlPart) !== -1 && r.json) return r;
+    }
+    return null;
+  }
+
+  // Identify a captured searchResult by its column signature rather than by a
+  // hardcoded menu-entry id — so it works for any program/profile.
+  //   exams:     has an obligationRelationParentCoefficient column
+  //   synthesis: has a caption column (module/UE labels) + no coef column
+  function classifyResult(resp) {
+    if (!resp.json || !resp.json.content || !resp.json.content.columns) return null;
+    var leaves = flattenColumns(resp.json.content.columns);
+    var hasCoef = leaves.some(function (l) { return l.field === "obligationRelationParentCoefficient"; });
+    var hasCaption = leaves.some(function (l) { return l.field === "caption"; });
+    var hasCode = leaves.some(function (l) { return l.field === "code"; });
+    if (hasCoef && hasCode) return "exams";
+    if (hasCaption && hasCode) return "synthesis";
+    return null;
+  }
+  function findResult(kind) {
+    for (var i = store.responses.length - 1; i >= 0; i--) {
+      if (classifyResult(store.responses[i]) === kind) return store.responses[i];
     }
     return null;
   }
@@ -180,31 +203,35 @@
     return (l.label && l.label.fr) || (l.defaultLabel && l.defaultLabel.fr) || "";
   }
 
-  // --------------------------------------------------------- coefficients
-  // Each obligation exposes obligationRelations[].coefficient = weight of a child
-  // within its parent. We fetch /api/obligations once (replaying the app's auth),
-  // extract every child→coef, and cache it. These weights reproduce Auriga's own
-  // averages exactly, so they also power an accurate what-if simulator.
-  var COEFS = {};
-  var coefLoading = false;
+  // ---------------------------------------------- obligation structure (OB)
+  // /api/obligations exposes, for every program, the full tree via
+  // obligationRelations (parent → child + coefficient). We fetch it once
+  // (replaying the app's auth), cache it, and use it to build the hierarchy for
+  // ANY program (no code-pattern guessing). A child's coefficient within its
+  // parent equals its ECTS at the UE level and reproduces Auriga's averages.
+  var OB = { parent: {}, children: {}, coef: {}, caption: {}, loaded: false };
+  var COEFS = OB.coef; // alias kept for readability
+  var obLoading = false;
 
-  function readCoefCache() {
+  function readObCache() {
     try {
-      var o = JSON.parse(localStorage.getItem("capella.coefs") || "null");
-      if (o && o.map && Date.now() - o.t < 3 * 864e5) return o.map;
+      var o = JSON.parse(localStorage.getItem("capella.ob") || "null");
+      if (o && o.ob && Date.now() - o.t < 3 * 864e5) return o.ob;
     } catch (e) {}
     return null;
   }
-  function writeCoefCache(map) {
-    try { localStorage.setItem("capella.coefs", JSON.stringify({ t: Date.now(), map: map })); } catch (e) {}
+  function writeObCache() {
+    try { localStorage.setItem("capella.ob", JSON.stringify({ t: Date.now(), ob: OB })); } catch (e) {}
   }
+  function useOb(ob) { OB = ob; OB.loaded = true; COEFS = OB.coef; }
+
   async function loadCoefficients() {
-    if (Object.keys(COEFS).length) return false;
-    var cached = readCoefCache();
-    if (cached) { COEFS = cached; return false; }
-    if (!store.auth || coefLoading) return false;
-    coefLoading = true;
-    var map = {};
+    if (OB.loaded) return false;
+    var cached = readObCache();
+    if (cached) { useOb(cached); return true; }
+    if (!store.auth || obLoading) return false;
+    obLoading = true;
+    var ob = { parent: {}, children: {}, coef: {}, caption: {}, loaded: true };
     try {
       for (var page = 1; page <= 3; page++) {
         var r = await fetch("/api/obligations?size=2000&page=" + page, {
@@ -214,16 +241,23 @@
         if (!r.ok) break;
         var j = await r.json();
         (j.content || []).forEach(function (o) {
+          var code = o.code;
+          if (!code) return;
+          var cap = o.caption || {};
+          ob.caption[code] = cap.fr || cap.en || code;
           (o.obligationRelations || []).forEach(function (rel) {
             var ch = (rel.obligationChild || {}).code;
-            if (ch && rel.coefficient != null) map[ch] = rel.coefficient;
+            if (!ch) return;
+            ob.parent[ch] = code;
+            (ob.children[code] = ob.children[code] || []).push(ch);
+            if (rel.coefficient != null) ob.coef[ch] = rel.coefficient;
           });
         });
         if (!j.totalPages || j.currentPage >= j.totalPages) break;
       }
-    } catch (e) { console.warn("[Capella] coef fetch failed", e); coefLoading = false; return false; }
-    coefLoading = false;
-    if (Object.keys(map).length) { COEFS = map; writeCoefCache(map); return true; }
+    } catch (e) { console.warn("[Capella] obligations fetch failed", e); obLoading = false; return false; }
+    obLoading = false;
+    if (Object.keys(ob.parent).length) { useOb(ob); writeObCache(); return true; }
     return false;
   }
 
@@ -242,9 +276,12 @@
       model.year = nameOf(gp.json.period.caption).replace(/Ann[ée]e acad[ée]mique/i, "").trim();
     }
 
-    // ---- synthesis (1144): tree nodes + exam captions ----
-    var syn = latest("/menuEntries/1144/searchResult");
-    var treeRows = [];
+    // ---- locate the two notes result sets by SHAPE (no hardcoded menu ids) ----
+    var syn = findResult("synthesis");
+    var ev = findResult("exams");
+
+    // ---- synthesis rows: structure nodes (with averages) + exam captions ----
+    var synRows = [];
     var examCaptions = {}; // code -> nice title
     var period = "";
     if (syn && syn.json && syn.json.content) {
@@ -258,25 +295,30 @@
         if (!code) return;
         var m = /^(\d{4})_/.exec(code);
         if (m && (!period || m[1] > period)) period = m[1];
-        var name = nameOf(line[capIdx]);
-        if (/_FISA_S\d/.test(code)) {
-          // module / UE / semester node
-          treeRows.push({
-            code: code,
-            name: name,
-            value: line[finalIdx] != null ? line[finalIdx] : line[beforeIdx],
-            kind: line[finalIdx] != null ? "finale" : "provisoire",
-          });
-        } else {
-          // exam-level row: keep its nice caption for later
-          examCaptions[code] = name;
-        }
+        synRows.push({
+          code: code,
+          name: nameOf(line[capIdx]),
+          value: finalIdx >= 0 && line[finalIdx] != null ? line[finalIdx] : (beforeIdx >= 0 ? line[beforeIdx] : null),
+          kind: finalIdx >= 0 && line[finalIdx] != null ? "finale" : "provisoire",
+        });
       });
-      model.hasTree = treeRows.length > 0;
     }
 
-    // ---- exams (1036): grade + coefficient + type ----
-    var ev = latest("/menuEntries/1036/searchResult");
+    // A synthesis row is a structure node (semester/UE/module) if the obligation
+    // tree knows it; otherwise it's an exam-level row (kept for its nice title).
+    // Fall back to the code pattern only when obligations aren't loaded yet.
+    function isStructure(code) {
+      if (OB.loaded) return !!(OB.parent[code] || OB.children[code]);
+      return /_FISA_S\d/.test(code);
+    }
+    var treeRows = [];
+    synRows.forEach(function (r) {
+      if (isStructure(r.code)) treeRows.push(r);
+      else examCaptions[r.code] = r.name;
+    });
+    model.hasTree = treeRows.length > 0;
+
+    // ---- exams: grade + coefficient + type ----
     var exams = [];
     if (ev && ev.json && ev.json.content) {
       var el2 = flattenColumns(ev.json.content.columns);
@@ -289,7 +331,7 @@
         if (!code) return;
         exams.push({
           code: code,
-          mark: line[markIdx],
+          mark: markIdx >= 0 ? line[markIdx] : null,
           coef: coefIdx >= 0 ? line[coefIdx] : null,
           type: eTypeIdx >= 0 ? line[eTypeIdx] : "",
           title: examCaptions[code] || "",
@@ -301,7 +343,7 @@
 
     if (!model.hasTree) return model;
 
-    // keep only current-year tree, dedupe by code (prefer a node that has a value)
+    // keep only the current year, dedupe by code (prefer a node that has a value)
     var byCode = {};
     treeRows.forEach(function (r) {
       if (period && r.code.indexOf(period + "_") !== 0) return;
@@ -309,20 +351,23 @@
       if (!ex || (ex.value == null && r.value != null)) byCode[r.code] = r;
     });
     var nodes = Object.keys(byCode).map(function (c) {
-      return { code: c, name: byCode[c].name, value: byCode[c].value, kind: byCode[c].kind, coef: COEFS[c], children: [], exams: [] };
+      return { code: c, name: OB.caption[c] || byCode[c].name, value: byCode[c].value, kind: byCode[c].kind, coef: OB.coef[c], children: [], exams: [] };
     });
-    nodes.sort(function (a, b) { return a.code < b.code ? -1 : 1; });
-
-    // nest by code prefix
     var index = {};
     nodes.forEach(function (n) { index[n.code] = n; });
+
+    // nest: authoritative parent from the obligation tree, else longest prefix
     var roots = [];
     nodes.forEach(function (n) {
-      var parent = null, best = -1;
-      nodes.forEach(function (o) {
-        if (o === n) return;
-        if (n.code.indexOf(o.code + "_") === 0 && o.code.length > best) { parent = o; best = o.code.length; }
-      });
+      var parent = null;
+      if (OB.loaded && OB.parent[n.code] && index[OB.parent[n.code]]) {
+        parent = index[OB.parent[n.code]];
+      } else if (!OB.loaded) {
+        var best = -1;
+        nodes.forEach(function (o) {
+          if (o !== n && n.code.indexOf(o.code + "_") === 0 && o.code.length > best) { parent = o; best = o.code.length; }
+        });
+      }
       if (parent) parent.children.push(n);
       else roots.push(n);
     });
@@ -335,10 +380,10 @@
       if (mod) mod.exams.push(x);
     });
     nodes.forEach(function (n) {
+      n.children.sort(function (a, b) { return a.code < b.code ? -1 : 1; });
       n.exams.sort(function (a, b) { return a.code < b.code ? -1 : 1; });
     });
 
-    // roots = semesters, sorted by code (S05 before S06)
     roots.sort(function (a, b) { return a.code < b.code ? -1 : 1; });
     model.semesters = roots;
     if (!model.year && period) model.year = "20" + period.slice(0, 2) + "-20" + period.slice(2);

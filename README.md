@@ -44,10 +44,18 @@ auriga-plus/
     └── ui.css
 ```
 
-## Notes techniques
+## Programme-agnostique
 
-- Les codes Auriga encodent l'arborescence : `2526_BSI_CYBER_FISA_S05_CYBER_BK`
-  = année 2025-26 / Bachelor cyber FISA / S05 / UE Cybersécurité / module Blockchain.
-  L'arbre est reconstruit par préfixe ; les épreuves (`..._FISA_EXA_1`) sont reliées
-  à leur module par un code normalisé (voir `normCode` dans `ui.js`).
-- Colonnes lues dynamiquement via la métadonnée `columns` de l'API (pas d'index en dur).
+Capella ne suppose rien du programme : il fonctionne pour n'importe quelle
+formation EPITA (ING, Prépa, Bachelor Cyber 1/2, etc.), pas seulement Cyber FISA.
+
+- **Structure** reconstruite à partir de `/api/obligations` (`obligationRelations` :
+  parent → enfant + coefficient) — l'arbre officiel de chaque programme, sans
+  aucune analyse de code. Repli sur un motif de code si les obligations ne sont
+  pas encore chargées.
+- **Pages de notes détectées par forme** (présence d'une colonne
+  `obligationRelationParentCoefficient` → épreuves ; `caption` → synthèse), pas
+  par identifiant de menu en dur.
+- **Colonnes** lues via la métadonnée `columns` de l'API (aucun index codé en dur).
+- Épreuves reliées à leur module par un code normalisé multi-filières
+  (`normCode` : retire le jeton de filière FISA/FISE… et le suffixe d'épreuve).
