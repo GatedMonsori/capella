@@ -1,6 +1,6 @@
 # Capella
 
-> *Capella est l'étoile la plus brillante de la constellation **Auriga** (le Cocher) — de quoi éclairer Auriga.*
+> _Capella est l'étoile la plus brillante de la constellation **Auriga** (le Cocher) — de quoi éclairer Auriga._
 
 Extension Chrome qui remplace l'affichage des notes d'**Auriga** (plateforme Aurion d'EPITA) par une interface claire : arborescence semestre → UE → module avec les moyennes, et chaque épreuve rangée sous son module avec son type et son coefficient. Libellés Auriga traduits en français lisible.
 
@@ -9,18 +9,24 @@ Extension Chrome qui remplace l'affichage des notes d'**Auriga** (plateforme Aur
 Auriga est une SPA Angular (produit **Aurion**) qui charge tout depuis une API JSON. L'extension :
 
 1. **`src/capture.js`** (MAIN world, `document_start`) — intercepte `fetch`/`XHR` avant le boot d'Angular et enregistre les réponses JSON de l'API.
-2. **`src/ui.js`** — reconstruit un bulletin propre à partir de deux endpoints :
-   - `/api/menuEntries/1144/searchResult` → **moyennes** de chaque niveau (semestre/UE/module) — « Mes notes (synthèse) »
-   - `/api/menuEntries/1036/searchResult` → **notes d'épreuves** avec coefficient (%) et type — « Mes notes (éval) »
-   - `/api/me` et `/api/globalPreferences` → identité et année académique
+2. **`src/ui.js`** — reconstruit un bulletin propre à partir de ce qu'Auriga a déjà chargé :
+   - la page **« Mes notes (synthèse) »** → **moyennes** de chaque niveau (semestre/UE/module) ;
+   - la page **« Mes notes (éval) »** → **notes d'épreuves** avec coefficient (%) et type ;
+   - `/api/obligations` → arbre + **coefficients/ECTS** ; `/api/me` et `/api/globalPreferences` → identité et année.
 
-Quand tu ouvres Auriga, l'interface **s'affiche automatiquement par-dessus**. Si les notes ne sont pas encore chargées, elle navigue toute seule (derrière l'overlay) vers les deux pages de notes pour les récupérer, puis les affiche.
+   Les deux pages de notes sont repérées par la **forme** de leur réponse (pas par un identifiant de menu en dur).
+
+Quand tu ouvres une page de notes d'Auriga, l'interface **s'affiche automatiquement par-dessus** dès que les données sont chargées. Capella ne navigue jamais à ta place (pour ne pas perturber Auriga) : ouvre « Mes notes (synthèse) » / « (éval) » et il se remplit tout seul.
 
 ## Fonctionnalités
 
 - Vue **semestre → UE → module** dépliable, fusion des deux pages de notes.
 - Moyennes déjà calculées par Auriga (finale / provisoire avant rattrapage), avec code couleur (/20).
 - Épreuves rangées sous leur module : titre, **type** (Examen / Examen final / TP-Oral / Rattrapage…) et **coefficient**.
+- **Coefficients** (ECUE) et **ECTS** (UE) affichés, plus « crédits validés » par semestre.
+- **Simulateur « what-if »** : active 🎯 Simuler, saisis des notes hypothétiques dans
+  les modules — les moyennes UE, semestre et les ECTS se recalculent en direct avec
+  les vrais coefficients.
 - Glossaire de traduction des termes Auriga (« Composant pédagogique » → « Module », etc.).
 - Bouton **↻ Recharger**, **✕ Auriga original** (revenir à l'interface d'origine), onglet **Debug** (export JSON brut).
 
@@ -30,8 +36,8 @@ Quand tu ouvres Auriga, l'interface **s'affiche automatiquement par-dessus**. Si
 
 1. Chrome → `chrome://extensions`
 2. Active **Mode développeur** (haut à droite)
-3. **Charger l'extension non empaquetée** → sélectionne le dossier `auriga-plus`
-4. Ouvre https://auriga.epita.fr — l'interface Auriga+ apparaît
+3. **Charger l'extension non empaquetée** → sélectionne le dossier `capella`
+4. Ouvre https://auriga.epita.fr — l'interface Capella apparaît
 
 ## Structure
 
@@ -59,3 +65,10 @@ formation EPITA (ING, Prépa, Bachelor Cyber 1/2, etc.), pas seulement Cyber FIS
 - **Colonnes** lues via la métadonnée `columns` de l'API (aucun index codé en dur).
 - Épreuves reliées à leur module par un code normalisé multi-filières
   (`normCode` : retire le jeton de filière FISA/FISE… et le suffixe d'épreuve).
+
+## Contribuer & licence
+
+- Personne ne peut pousser directement : voir [CONTRIBUTING.md](CONTRIBUTING.md)
+  (fork + Pull Request). Style de code inspiré des standards vus en cours,
+  adaptés au JavaScript (ESLint + Prettier : `npm run lint`, `npm run format`).
+- Licence [MIT](LICENSE).

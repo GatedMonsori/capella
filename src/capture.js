@@ -19,7 +19,7 @@
     // Used by the coefficient probe to replay authenticated requests. Tokens are
     // short-lived, so we always keep the latest.
     auth: null,
-    version: "1.0.0",
+    version: "1.1.0",
   };
   window.__AURIGA_PLUS__ = store;
 
@@ -37,12 +37,22 @@
     depth = depth || 0;
     if (value === null) return "null";
     if (Array.isArray(value)) {
-      return "Array(" + value.length + ")" + (value.length && depth < 2 ? " of " + summarize(value[0], depth + 1) : "");
+      return (
+        "Array(" +
+        value.length +
+        ")" +
+        (value.length && depth < 2 ? " of " + summarize(value[0], depth + 1) : "")
+      );
     }
     const t = typeof value;
     if (t === "object") {
       if (depth >= 2) return "{…}";
-      return "{ " + Object.keys(value).slice(0, 12).join(", ") + (Object.keys(value).length > 12 ? ", …" : "") + " }";
+      return (
+        "{ " +
+        Object.keys(value).slice(0, 12).join(", ") +
+        (Object.keys(value).length > 12 ? ", …" : "") +
+        " }"
+      );
     }
     return t;
   }
@@ -62,7 +72,7 @@
       at: new Date().toISOString(),
       json: json,
       text: text,
-      shape: json != null ? summarize(json) : (text ? "text(" + text.length + ")" : "empty"),
+      shape: json != null ? summarize(json) : text ? "text(" + text.length + ")" : "empty",
     };
     store.responses.push(entry);
     if (store.responses.length > MAX) store.responses.shift();
@@ -80,7 +90,8 @@
   // Very loose structural heuristic: an array of objects whose keys mention grades,
   // or objects with obvious grade-ish keys.
   function jsonLooksGrade(json) {
-    const keyRe = /note|moyenne|coef|coeff|ects|credit|module|matiere|ue$|libell|resultat|mark|grade|semestre/i;
+    const keyRe =
+      /note|moyenne|coef|coeff|ects|credit|module|matiere|ue$|libell|resultat|mark|grade|semestre/i;
     function scan(v, d) {
       if (d > 4 || v == null) return false;
       if (Array.isArray(v)) return v.slice(0, 5).some((x) => scan(x, d + 1));

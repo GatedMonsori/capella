@@ -1,0 +1,21 @@
+{
+  "name": "capella",
+  "version": "1.1.0",
+  "description": "Capella — a clean grades interface for EPITA's Auriga (Aurion). Chrome extension.",
+  "private": true,
+  "license": "MIT",
+  "author": "Rayan Baffoun",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GatedMonsori/capella.git"
+  },
+  "scripts": {
+    "lint": "eslint src",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.0"
+  }
+}
