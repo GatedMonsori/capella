@@ -5,11 +5,14 @@ logos EPITA/Auriga dans les visuels.
 
 ## Champs de la fiche
 
-**Nom**
+**Nom** (identique au manifest — le plus sûr côté marque)
 
 ```
-Capella — notes Auriga (EPITA)
+Capella
 ```
+
+_Alternative plus « trouvable » mais qui met des marques tierces dans le nom (risque
+review un peu plus élevé) : « Capella — notes EPITA »._
 
 **Résumé** (≤ 132 caractères)
 
@@ -69,9 +72,11 @@ compatibilité.
 - [ ] Compte développeur Chrome Web Store (frais unique de 5 $).
 - [ ] **Au moins 1 capture d'écran 1280×800** (ex. la vue bulletin de Capella) —
       à prendre sur ton navigateur (impossible à générer automatiquement).
-- [ ] (Optionnel) petite tuile promo 440×280.
-- [ ] Uploader le ZIP de l'extension (voir `npm run pack` ou zipper le dossier).
+- [ ] Uploader le ZIP de l'extension (`npm run pack` → `capella.zip`).
 
-## Icônes
+## Visuels fournis
 
-`icons/icon128.png` (manifest) et `icons/icon512.png` (fiche / promo) sont fournis.
+- `icons/icon128.png` — icône (manifest).
+- `icons/icon512.png` — icône haute résolution (fiche store).
+- `icons/promo440x280.png` — petite tuile promotionnelle.
+- Reste à faire : la ou les captures d'écran 1280×800.

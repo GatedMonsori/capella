@@ -13,7 +13,7 @@
     "lint": "eslint src",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "pack": "rm -f capella.zip && zip -r capella.zip manifest.json src icons -x '*.DS_Store' 'icons/icon512.png'"
+    "pack": "rm -f capella.zip && zip -r capella.zip manifest.json src icons -x '*.DS_Store' 'icons/icon512.png' 'icons/promo440x280.png'"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
