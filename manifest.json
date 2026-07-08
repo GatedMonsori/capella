@@ -1,8 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Capella",
-  "version": "1.1.0",
-  "description": "Capella — une interface claire et lisible par-dessus Auriga (Aurion) d'EPITA : notes, moyennes, coefficients, libellés compréhensibles.",
+  "version": "1.2.0",
+  "description": "Une interface claire et lisible par-dessus Auriga (Aurion) d'EPITA : notes, moyennes, coefficients, ECTS. Non officiel.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "content_scripts": [
     {
       "matches": ["https://auriga.epita.fr/*"],

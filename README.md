@@ -4,6 +4,8 @@
 
 Extension Chrome qui remplace l'affichage des notes d'**Auriga** (plateforme Aurion d'EPITA) par une interface claire : arborescence semestre → UE → module avec les moyennes, et chaque épreuve rangée sous son module avec son type et son coefficient. Libellés Auriga traduits en français lisible.
 
+> **Projet non officiel**, indépendant, sans affiliation ni approbation d'EPITA ni d'Auriga/Aurion. « Auriga » et « EPITA » ne sont mentionnés que pour décrire la compatibilité. Voir la [politique de confidentialité](PRIVACY.md) : aucune donnée ne quitte ton navigateur.
+
 ## Comment ça marche
 
 Auriga est une SPA Angular (produit **Aurion**) qui charge tout depuis une API JSON. L'extension :
@@ -28,7 +30,7 @@ Quand tu ouvres une page de notes d'Auriga, l'interface **s'affiche automatiquem
   les modules — les moyennes UE, semestre et les ECTS se recalculent en direct avec
   les vrais coefficients.
 - Glossaire de traduction des termes Auriga (« Composant pédagogique » → « Module », etc.).
-- Bouton **↻ Recharger**, **✕ Auriga original** (revenir à l'interface d'origine), onglet **Debug** (export JSON brut).
+- Boutons **🎯 Simuler**, **↻ Recharger**, **✕ Auriga original** (revenir à l'interface d'origine).
 
 > Les moyennes affichées sont **celles calculées par Auriga**, pas des recalculs — donc fiables. Les **coefficients** (ECUE) et **ECTS** (UE) proviennent de `/api/obligations` (`obligationRelations[].coefficient`) et ont été **vérifiés au bulletin officiel** (syllabus S5/S6) : correspondance exacte. Le poids d'une UE dans le semestre = ses crédits ECTS. Le GPA n'est pas fourni par ces endpoints, donc non affiché.
 
@@ -48,13 +50,15 @@ capella/
 │   ├── capture.js       # MAIN world, document_start — hooke fetch/XHR + Bearer
 │   ├── ui.js            # parse Aurion, arbre/coeffs/ECTS, simulateur, rendu
 │   └── ui.css
-├── package.json         # scripts lint/format (dev only)
-├── .eslintrc.json       # règles ESLint
-├── .prettierrc.json     # format Prettier
-├── .editorconfig
+├── icons/               # icon16/32/48/128 (extension) + icon512 (fiche store)
+├── package.json         # scripts lint / format / pack (dev only)
+├── PRIVACY.md           # politique de confidentialité
+├── store/listing.md     # fiche + checklist Chrome Web Store
 ├── CONTRIBUTING.md      # fork + PR (personne ne peut pousser directement)
 └── LICENSE              # MIT
 ```
+
+Empaqueter pour le Chrome Web Store : `npm run pack` → `capella.zip`.
 
 > Le dépôt s'appelle `capella` ; en local le dossier a pu rester `auriga-plus` —
 > peu importe, seul le contenu compte pour « Charger l'extension non empaquetée ».

@@ -93,31 +93,6 @@
     }, 1800);
   }
 
-  function copy(text) {
-    navigator.clipboard.writeText(text).then(
-      function () {
-        toast("Copié");
-      },
-      function () {
-        toast("Copie impossible");
-      }
-    );
-  }
-
-  // Save an object as a downloaded JSON file (handles payloads too big to copy).
-  function downloadJSON(name, obj) {
-    var blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () {
-      URL.revokeObjectURL(a.href);
-      a.remove();
-    }, 1000);
-  }
-
   function toNum(v) {
     if (v == null) return NaN;
     return parseFloat(String(v).replace(",", "."));
@@ -787,84 +762,6 @@
     return panel;
   }
 
-  // Try likely endpoints for the obligation tree with coefficients, replaying the
-  // page's own auth. Dumps results so we can find where module→UE coefs live.
-  function shapeOf(j) {
-    if (j == null) return "null";
-    if (Array.isArray(j)) return "Array(" + j.length + ")";
-    if (typeof j === "object") return "{ " + Object.keys(j).slice(0, 14).join(", ") + " }";
-    return typeof j;
-  }
-  async function probeCoefficients() {
-    var candidates = [
-      "/api/viewObligationTrees?size=2000&page=1",
-      "/api/viewObligationTrees?size=2000&page=1&sort=code",
-      "/api/obligations?size=2000&page=1",
-      "/api/obligationRelations?size=2000&page=1",
-      "/api/obligationTrees?size=2000&page=1",
-    ];
-    var headers = { Accept: "application/json" };
-    if (store.auth) headers.Authorization = store.auth;
-    var out = [];
-    for (var i = 0; i < candidates.length; i++) {
-      var u = candidates[i];
-      try {
-        var r = await fetch(u, { headers: headers, credentials: "include" });
-        var txt = await r.text();
-        var j = null;
-        try {
-          j = JSON.parse(txt);
-        } catch (e) {}
-        out.push({ url: u, status: r.status, shape: j ? shapeOf(j) : txt.slice(0, 200), sample: j });
-      } catch (e) {
-        out.push({ url: u, error: String(e) });
-      }
-    }
-    console.log("%c[Capella] probe results", "color:#1a2b6b;font-weight:bold", out);
-    downloadJSON("capella-probe.json", out);
-    toast("Sondage terminé — fichier téléchargé (capella-probe.json)");
-    return out;
-  }
-
-  function buildDebugPanel() {
-    var panel = el("div", { class: "ap-panel", "data-panel": "debug" });
-
-    var probe = el("div", { class: "ap-card" });
-    probe.appendChild(el("h2", { text: "Chercher les coefficients (module → UE)" }));
-    probe.appendChild(
-      el("p", {
-        class: "ap-muted",
-        html:
-          "Teste les endpoints probables de l'arbre des obligations en réutilisant ta session. " +
-          "Clique : un fichier <b>capella-probe.json</b> est téléchargé (assez gros pour ne pas passer par le presse-papier).",
-      })
-    );
-    var pb = el("button", { class: "ap-btn", text: "🔍 Sonder les coefficients" });
-    pb.onclick = function () {
-      probeCoefficients();
-    };
-    probe.appendChild(pb);
-    probe.appendChild(
-      el("div", {
-        class: "ap-muted",
-        style: "margin-top:8px",
-        text:
-          "Token capté : " + (store.auth ? "oui" : "pas encore (navigue un peu dans Auriga puis réessaie)"),
-      })
-    );
-    panel.appendChild(probe);
-
-    var card = el("div", { class: "ap-card" });
-    card.appendChild(el("h2", { text: "Données brutes captées (" + store.responses.length + ")" }));
-    var b = el("button", { class: "ap-btn", text: "Tout copier (JSON)" });
-    b.onclick = function () {
-      copy(JSON.stringify(store.responses, null, 2));
-    };
-    card.appendChild(b);
-    panel.appendChild(card);
-    return panel;
-  }
-
   // ----------------------------------------------------------------- shell
   var root = null;
   function build(model) {
@@ -903,35 +800,9 @@
     header.appendChild(close);
     root.appendChild(header);
 
-    var tabs = el("div", { class: "ap-tabs" });
-    var tG = el("button", { class: "ap-tab ap-active", text: "Mes notes" });
-    var tD = el("button", { class: "ap-tab", text: "Debug" });
-    tabs.appendChild(tG);
-    tabs.appendChild(tD);
-    root.appendChild(tabs);
-
     var body = el("div", { class: "ap-body" });
-    var gPanel = buildGradesPanel(model);
-    var dPanel = buildDebugPanel();
-    body.appendChild(gPanel);
-    body.appendChild(dPanel);
+    body.appendChild(buildGradesPanel(model));
     root.appendChild(body);
-
-    function activate(tab, name) {
-      [tG, tD].forEach(function (t) {
-        t.classList.remove("ap-active");
-      });
-      tab.classList.add("ap-active");
-      [gPanel, dPanel].forEach(function (p) {
-        p.classList.toggle("ap-active", p.getAttribute("data-panel") === name);
-      });
-    }
-    tG.onclick = function () {
-      activate(tG, "grades");
-    };
-    tD.onclick = function () {
-      activate(tD, "debug");
-    };
 
     document.body.appendChild(root);
   }
