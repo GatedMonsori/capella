@@ -132,6 +132,42 @@
 }
 .ap-grade-note { font-size: 10px; font-weight: 600; opacity: 0.75; }
 
+.ap-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ap-status-green { background: #e6f4ec; color: #1a7f45; }
+.ap-status-orange { background: #faf1e2; color: #b0700f; }
+.ap-status-red { background: #f9e9e7; color: #c0392b; }
+
+.ap-settings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: #5a6480;
+}
+.ap-settings-lbl { font-weight: 700; color: #1a2b6b; }
+.ap-settings-field { display: flex; align-items: center; gap: 6px; }
+.ap-settings-field input {
+  width: 58px;
+  padding: 5px 8px;
+  border: 1px solid #d7dcea;
+  border-radius: 7px;
+  font: inherit;
+  color: #1a2033;
+}
+.ap-settings-field input:focus { outline: 2px solid #b9c4f2; border-color: #b9c4f2; }
+
 /* exams */
 .ap-exams { padding: 4px 0 8px 22px; }
 .ap-exam {

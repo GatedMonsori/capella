@@ -40,6 +40,17 @@
     ["FISA", "Formation par apprentissage"],
   ];
 
+  // Passing thresholds — editable in the UI, persisted in localStorage.
+  // moduleThreshold = note éliminatoire d'une matière; ueThreshold = validation UE.
+  var DEFAULTS = { moduleThreshold: 7, ueThreshold: 10 };
+  var S = (function () {
+    try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem("capella.settings") || "{}")); }
+    catch (e) { return Object.assign({}, DEFAULTS); }
+  })();
+  function saveSettings() {
+    try { localStorage.setItem("capella.settings", JSON.stringify(S)); } catch (e) {}
+  }
+
   // ---------------------------------------------------------------- helpers
   function el(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -100,6 +111,21 @@
     if (n >= 10) return "#c07a1e";
     return "#c0392b";
   }
+  // Threshold-based status (indicative — Auriga has its own jury/compensation rules).
+  function moduleStatus(v) {
+    var n = toNum(v);
+    if (isNaN(n)) return null;
+    if (n < S.moduleThreshold) return { t: "⚠ éliminatoire (<" + fmt(S.moduleThreshold) + ")", c: "red" };
+    if (n < 10) return { t: "à rattraper", c: "orange" };
+    return null; // validated modules stay clean; the green pill already says it
+  }
+  function ueStatus(v) {
+    var n = toNum(v);
+    if (isNaN(n)) return null;
+    if (n < S.ueThreshold) return { t: "UE non validée (<" + fmt(S.ueThreshold) + ")", c: "red" };
+    return { t: "UE validée", c: "green" };
+  }
+
   function gradeTint(v) {
     var n = toNum(v);
     if (isNaN(n)) return "#eef1f7";
@@ -320,6 +346,9 @@
     var caret = el("span", { class: "ap-caret", text: hasKids ? "▾" : "" });
     row.appendChild(caret);
     row.appendChild(el("span", { class: "ap-node-name", text: node.name || node.code }));
+    var isUE = depth === 1 && node.children.length;
+    var st = isUE ? ueStatus(node.value) : moduleStatus(node.value);
+    if (st) row.appendChild(el("span", { class: "ap-status ap-status-" + st.c, text: st.t }));
     row.appendChild(pill(node.value, node.kind));
     box.appendChild(row);
 
@@ -354,6 +383,24 @@
       panel.appendChild(empty);
       return panel;
     }
+    // editable passing thresholds
+    var bar = el("div", { class: "ap-settings" });
+    bar.appendChild(el("span", { class: "ap-settings-lbl", text: "Seuils :" }));
+    function numField(label, key) {
+      var wrap = el("label", { class: "ap-settings-field" });
+      wrap.appendChild(el("span", { text: label }));
+      var inp = el("input", { type: "number", step: "0.5", min: "0", max: "20", value: String(S[key]) });
+      inp.onchange = function () {
+        var v = parseFloat(inp.value);
+        if (!isNaN(v)) { S[key] = v; saveSettings(); rerender(); }
+      };
+      wrap.appendChild(inp);
+      return wrap;
+    }
+    bar.appendChild(numField("matière éliminatoire <", "moduleThreshold"));
+    bar.appendChild(numField("UE validée ≥", "ueThreshold"));
+    panel.appendChild(bar);
+
     model.semesters.forEach(function (s) { panel.appendChild(renderNode(s, 0)); });
 
     // glossary
