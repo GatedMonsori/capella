@@ -1,0 +1,504 @@
+// Auriga+ — interface layer
+// Parses Auriga (Aurion) API responses captured by capture.js and renders a
+// clean, readable "bulletin": semester → UE → module tree with averages, and
+// each exam nested under its module with its type and coefficient.
+//
+// Data sources (captured from the app's own authenticated requests):
+//   /api/menuEntries/1144/searchResult  → "Mes notes (synthèse)": computed
+//        averages for every node of the tree (+ per-exam rows with nice titles)
+//   /api/menuEntries/1036/searchResult  → "Mes notes (éval)": individual exam
+//        grades with coefficient (weight %) and exam type
+//   /api/me                             → student identity
+//   /api/globalPreferences              → academic year label
+
+(function () {
+  "use strict";
+  if (document.getElementById("auriga-plus-fab")) return;
+
+  var store = window.__AURIGA_PLUS__ || { responses: [] };
+
+  // ------------------------------------------------------------------ config
+  var EXAM_TYPES = {
+    EXA: "Examen",
+    EXF: "Examen final",
+    EXO: "TP / Oral",
+    EXP: "TP",
+    FAF: "Éval. compétences",
+    RATT: "Rattrapage",
+    QCM: "QCM",
+    CC: "Contrôle continu",
+  };
+
+  // Plain-French glossary for Auriga's cryptic wording.
+  var GLOSSARY = [
+    ["Composant pédagogique", "Module / matière"],
+    ["Moy. (avant RATT)", "Moyenne provisoire (avant rattrapage)"],
+    ["Moy. (finale)", "Moyenne finale (validée)"],
+    ["Coef", "Poids de l'épreuve dans le module (%)"],
+    ["EXA / EXF / EXO", "Examen / Examen final / TP-Oral"],
+    ["RATT", "Rattrapage"],
+    ["FISA", "Formation par apprentissage"],
+  ];
+
+  // ---------------------------------------------------------------- helpers
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    if (attrs)
+      for (var k in attrs) {
+        if (k === "class") n.className = attrs[k];
+        else if (k === "text") n.textContent = attrs[k];
+        else if (k === "html") n.innerHTML = attrs[k];
+        else n.setAttribute(k, attrs[k]);
+      }
+    (kids || []).forEach(function (c) {
+      if (c) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    });
+    return n;
+  }
+
+  function toast(msg) {
+    var t = document.getElementById("auriga-plus-toast");
+    if (!t) {
+      t = el("div", { id: "auriga-plus-toast", class: "ap-toast" });
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add("ap-show");
+    clearTimeout(t.__h);
+    t.__h = setTimeout(function () { t.classList.remove("ap-show"); }, 1800);
+  }
+
+  function copy(text) {
+    navigator.clipboard.writeText(text).then(
+      function () { toast("Copié"); },
+      function () { toast("Copie impossible"); }
+    );
+  }
+
+  function toNum(v) {
+    if (v == null) return NaN;
+    return parseFloat(String(v).replace(",", "."));
+  }
+  function fmt(v) {
+    var n = toNum(v);
+    if (isNaN(n)) return v && String(v).trim() ? String(v) : "—";
+    return (Math.round(n * 100) / 100).toString();
+  }
+  function nameOf(cap) {
+    if (cap == null) return "";
+    if (typeof cap === "string") return cap;
+    return cap.fr || cap.en || cap.es || "";
+  }
+
+  // Colour scale on /20.
+  function gradeColor(v) {
+    var n = toNum(v);
+    if (isNaN(n)) return "#5a6480";
+    if (n >= 16) return "#1a7f45";
+    if (n >= 14) return "#2d8f6f";
+    if (n >= 12) return "#2b6cb0";
+    if (n >= 10) return "#c07a1e";
+    return "#c0392b";
+  }
+  function gradeTint(v) {
+    var n = toNum(v);
+    if (isNaN(n)) return "#eef1f7";
+    if (n >= 16) return "#e6f4ec";
+    if (n >= 14) return "#e7f2ee";
+    if (n >= 12) return "#e8f0f9";
+    if (n >= 10) return "#faf1e2";
+    return "#f9e9e7";
+  }
+
+  // Normalise a code so exam codes and module codes line up.
+  // Module:  2526_BSI_CYBER_FISA_S05_CYBER_BK       -> 2526_BSI_CYBER_S05_CYBER_BK
+  // Exam:    2526_BSI_CYBER_S05_CYBER_BK_FISA_EXA_1 -> 2526_BSI_CYBER_S05_CYBER_BK
+  function normCode(c) {
+    return String(c || "")
+      .replace("_FISA", "")
+      .replace(/_(EXA|EXF|EXO|EXP|FAF|RATT|QCM|CC)(_\d+)?$/i, "");
+  }
+
+  // ------------------------------------------------------- response access
+  function latest(urlPart) {
+    for (var i = store.responses.length - 1; i >= 0; i--) {
+      var r = store.responses[i];
+      if (r.url && r.url.indexOf(urlPart) !== -1 && r.json) return r;
+    }
+    return null;
+  }
+
+  // Flatten Auriga's column tree to leaf columns, in the same order as `lines`.
+  function flattenColumns(columns) {
+    var leaves = [];
+    (function walk(cols) {
+      cols.forEach(function (c) {
+        if (Array.isArray(c.children) && c.children.length) walk(c.children);
+        else leaves.push(c);
+      });
+    })(columns || []);
+    return leaves;
+  }
+  function labFr(l) {
+    return (l.label && l.label.fr) || (l.defaultLabel && l.defaultLabel.fr) || "";
+  }
+
+  // ------------------------------------------------------------- parse data
+  function parse() {
+    var model = { name: "", year: "", semesters: [], hasTree: false, hasExams: false };
+
+    // identity
+    var me = latest("/api/me");
+    if (me && me.json && me.json.person) {
+      var p = me.json.person;
+      model.name = ((p.currentFirstName || "") + " " + (p.currentLastName || "")).trim();
+    }
+    var gp = latest("/api/globalPreferences");
+    if (gp && gp.json && gp.json.period && gp.json.period.caption) {
+      model.year = nameOf(gp.json.period.caption).replace(/Ann[ée]e acad[ée]mique/i, "").trim();
+    }
+
+    // ---- synthesis (1144): tree nodes + exam captions ----
+    var syn = latest("/menuEntries/1144/searchResult");
+    var treeRows = [];
+    var examCaptions = {}; // code -> nice title
+    var period = "";
+    if (syn && syn.json && syn.json.content) {
+      var leaves = flattenColumns(syn.json.content.columns);
+      var codeIdx = leaves.findIndex(function (l) { return l.field === "code"; });
+      var capIdx = leaves.findIndex(function (l) { return l.field === "caption"; });
+      var finalIdx = leaves.findIndex(function (l) { return /finale/i.test(labFr(l)); });
+      var beforeIdx = leaves.findIndex(function (l) { return /avant/i.test(labFr(l)); });
+      (syn.json.content.lines || []).forEach(function (line) {
+        var code = line[codeIdx];
+        if (!code) return;
+        var m = /^(\d{4})_/.exec(code);
+        if (m && (!period || m[1] > period)) period = m[1];
+        var name = nameOf(line[capIdx]);
+        if (/_FISA_S\d/.test(code)) {
+          // module / UE / semester node
+          treeRows.push({
+            code: code,
+            name: name,
+            value: line[finalIdx] != null ? line[finalIdx] : line[beforeIdx],
+            kind: line[finalIdx] != null ? "finale" : "provisoire",
+          });
+        } else {
+          // exam-level row: keep its nice caption for later
+          examCaptions[code] = name;
+        }
+      });
+      model.hasTree = treeRows.length > 0;
+    }
+
+    // ---- exams (1036): grade + coefficient + type ----
+    var ev = latest("/menuEntries/1036/searchResult");
+    var exams = [];
+    if (ev && ev.json && ev.json.content) {
+      var el2 = flattenColumns(ev.json.content.columns);
+      var markIdx = el2.findIndex(function (l) { return l.field === "calculatedField" && /note|mark/i.test(labFr(l)); });
+      var coefIdx = el2.findIndex(function (l) { return l.field === "obligationRelationParentCoefficient"; });
+      var eCodeIdx = el2.findIndex(function (l) { return l.field === "code" && !/type/i.test(labFr(l)); });
+      var eTypeIdx = el2.findIndex(function (l) { return l.field === "code" && /type/i.test(labFr(l)); });
+      (ev.json.content.lines || []).forEach(function (line) {
+        var code = line[eCodeIdx];
+        if (!code) return;
+        exams.push({
+          code: code,
+          mark: line[markIdx],
+          coef: coefIdx >= 0 ? line[coefIdx] : null,
+          type: eTypeIdx >= 0 ? line[eTypeIdx] : "",
+          title: examCaptions[code] || "",
+          moduleKey: normCode(code),
+        });
+      });
+      model.hasExams = exams.length > 0;
+    }
+
+    if (!model.hasTree) return model;
+
+    // keep only current-year tree, dedupe by code (prefer a node that has a value)
+    var byCode = {};
+    treeRows.forEach(function (r) {
+      if (period && r.code.indexOf(period + "_") !== 0) return;
+      var ex = byCode[r.code];
+      if (!ex || (ex.value == null && r.value != null)) byCode[r.code] = r;
+    });
+    var nodes = Object.keys(byCode).map(function (c) {
+      return { code: c, name: byCode[c].name, value: byCode[c].value, kind: byCode[c].kind, children: [], exams: [] };
+    });
+    nodes.sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+    // nest by code prefix
+    var index = {};
+    nodes.forEach(function (n) { index[n.code] = n; });
+    var roots = [];
+    nodes.forEach(function (n) {
+      var parent = null, best = -1;
+      nodes.forEach(function (o) {
+        if (o === n) return;
+        if (n.code.indexOf(o.code + "_") === 0 && o.code.length > best) { parent = o; best = o.code.length; }
+      });
+      if (parent) parent.children.push(n);
+      else roots.push(n);
+    });
+
+    // attach exams to leaf modules by normalised code
+    var modByKey = {};
+    nodes.forEach(function (n) { modByKey[normCode(n.code)] = n; });
+    exams.forEach(function (x) {
+      var mod = modByKey[x.moduleKey];
+      if (mod) mod.exams.push(x);
+    });
+    nodes.forEach(function (n) {
+      n.exams.sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+    });
+
+    // roots = semesters, sorted by code (S05 before S06)
+    roots.sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+    model.semesters = roots;
+    if (!model.year && period) model.year = "20" + period.slice(0, 2) + "-20" + period.slice(2);
+    return model;
+  }
+
+  // --------------------------------------------------------------- render
+  function pill(value, kind) {
+    var col = gradeColor(value);
+    var box = el("span", { class: "ap-grade" });
+    box.style.color = col;
+    box.style.background = gradeTint(value);
+    box.textContent = fmt(value);
+    if (kind === "provisoire") {
+      var s = el("span", { class: "ap-grade-note", text: " prov." });
+      box.appendChild(s);
+    }
+    return box;
+  }
+
+  function renderExam(x) {
+    var row = el("div", { class: "ap-exam" });
+    var typeCode = String(x.type || "").toUpperCase();
+    var typeLabel = EXAM_TYPES[typeCode] || typeCode || "Épreuve";
+    var title = x.title || x.code.split("_").slice(-3).join(" ");
+    row.appendChild(el("span", { class: "ap-exam-title", text: title }));
+    var meta = el("span", { class: "ap-exam-meta" });
+    meta.appendChild(el("span", { class: "ap-tag", text: typeLabel }));
+    if (x.coef != null && x.coef !== "")
+      meta.appendChild(el("span", { class: "ap-tag ap-tag-soft", text: "coef " + fmt(x.coef) + "%" }));
+    row.appendChild(meta);
+    var g = el("span", { class: "ap-exam-grade" });
+    g.style.color = gradeColor(x.mark);
+    g.textContent = x.mark != null && String(x.mark).trim() ? fmt(x.mark) : "—";
+    row.appendChild(g);
+    return row;
+  }
+
+  // Recursive node renderer. depth 0 = semester, 1 = UE, 2+ = module.
+  function renderNode(node, depth) {
+    if (depth === 0) {
+      var card = el("div", { class: "ap-sem" });
+      var head = el("div", { class: "ap-sem-head" });
+      var titles = el("div", {});
+      titles.appendChild(el("div", { class: "ap-sem-title", text: node.name || node.code }));
+      titles.appendChild(el("div", { class: "ap-sem-sub", text: node.kind === "finale" ? "Moyenne finale" : "Moyenne provisoire (semestre en cours)" }));
+      head.appendChild(titles);
+      var big = el("div", { class: "ap-sem-avg" });
+      big.style.color = gradeColor(node.value);
+      big.textContent = fmt(node.value);
+      big.appendChild(el("span", { class: "ap-sem-avg-max", text: "/20" }));
+      head.appendChild(big);
+      card.appendChild(head);
+      var body = el("div", { class: "ap-sem-body" });
+      node.children.forEach(function (c) { body.appendChild(renderNode(c, 1)); });
+      card.appendChild(body);
+      return card;
+    }
+
+    var box = el("div", { class: "ap-node ap-node-d" + Math.min(depth, 3) });
+    var row = el("div", { class: "ap-node-row" });
+    var hasKids = node.children.length || node.exams.length;
+    var caret = el("span", { class: "ap-caret", text: hasKids ? "▾" : "" });
+    row.appendChild(caret);
+    row.appendChild(el("span", { class: "ap-node-name", text: node.name || node.code }));
+    row.appendChild(pill(node.value, node.kind));
+    box.appendChild(row);
+
+    var sub = el("div", { class: "ap-node-sub" });
+    node.children.forEach(function (c) { sub.appendChild(renderNode(c, depth + 1)); });
+    if (node.exams.length) {
+      var exWrap = el("div", { class: "ap-exams" });
+      node.exams.forEach(function (x) { exWrap.appendChild(renderExam(x)); });
+      sub.appendChild(exWrap);
+    }
+    box.appendChild(sub);
+
+    if (hasKids) {
+      row.style.cursor = "pointer";
+      row.onclick = function () {
+        var hidden = sub.style.display === "none";
+        sub.style.display = hidden ? "" : "none";
+        caret.textContent = hidden ? "▾" : "▸";
+      };
+    }
+    return box;
+  }
+
+  function buildGradesPanel(model) {
+    var panel = el("div", { class: "ap-panel ap-active", "data-panel": "grades" });
+    if (!model.hasTree) {
+      var empty = el("div", { class: "ap-empty" });
+      empty.appendChild(el("p", { text: "Notes pas encore chargées." }));
+      var btn = el("button", { class: "ap-btn", text: "Charger mes notes" });
+      btn.onclick = function () { loadAndRender(true); };
+      empty.appendChild(btn);
+      panel.appendChild(empty);
+      return panel;
+    }
+    model.semesters.forEach(function (s) { panel.appendChild(renderNode(s, 0)); });
+
+    // glossary
+    var gl = el("div", { class: "ap-card ap-gloss" });
+    var glHead = el("div", { class: "ap-gloss-head", text: "ℹ️ Traduction des termes Auriga" });
+    var glBody = el("div", { class: "ap-gloss-body", style: "display:none" });
+    var tbl = el("table", { class: "ap-table" });
+    GLOSSARY.forEach(function (g) {
+      tbl.appendChild(el("tr", {}, [el("td", { text: g[0] }), el("td", { text: g[1] })]));
+    });
+    glBody.appendChild(tbl);
+    glHead.onclick = function () { glBody.style.display = glBody.style.display === "none" ? "" : "none"; };
+    gl.appendChild(glHead);
+    gl.appendChild(glBody);
+    panel.appendChild(gl);
+    return panel;
+  }
+
+  function buildDebugPanel() {
+    var panel = el("div", { class: "ap-panel", "data-panel": "debug" });
+    var card = el("div", { class: "ap-card" });
+    card.appendChild(el("h2", { text: "Données brutes captées (" + store.responses.length + ")" }));
+    var b = el("button", { class: "ap-btn", text: "Tout copier (JSON)" });
+    b.onclick = function () { copy(JSON.stringify(store.responses, null, 2)); };
+    card.appendChild(b);
+    panel.appendChild(card);
+    return panel;
+  }
+
+  // ----------------------------------------------------------------- shell
+  var root = null;
+  function build(model) {
+    root = el("div", { id: "auriga-plus-root" });
+
+    var header = el("div", { class: "ap-header" });
+    var brand = el("div", {});
+    brand.appendChild(el("h1", { text: "Auriga+" }));
+    brand.appendChild(el("span", { class: "ap-sub", text: (model.name || "") + (model.year ? " · " + model.year : "") }));
+    header.appendChild(brand);
+    header.appendChild(el("div", { class: "ap-spacer" }));
+    var refresh = el("button", { text: "↻ Recharger" });
+    refresh.onclick = function () { loadAndRender(true); };
+    var close = el("button", { text: "✕ Auriga original" });
+    close.onclick = function () { toggle(false); };
+    header.appendChild(refresh);
+    header.appendChild(close);
+    root.appendChild(header);
+
+    var tabs = el("div", { class: "ap-tabs" });
+    var tG = el("button", { class: "ap-tab ap-active", text: "Mes notes" });
+    var tD = el("button", { class: "ap-tab", text: "Debug" });
+    tabs.appendChild(tG);
+    tabs.appendChild(tD);
+    root.appendChild(tabs);
+
+    var body = el("div", { class: "ap-body" });
+    var gPanel = buildGradesPanel(model);
+    var dPanel = buildDebugPanel();
+    body.appendChild(gPanel);
+    body.appendChild(dPanel);
+    root.appendChild(body);
+
+    function activate(tab, name) {
+      [tG, tD].forEach(function (t) { t.classList.remove("ap-active"); });
+      tab.classList.add("ap-active");
+      [gPanel, dPanel].forEach(function (p) {
+        p.classList.toggle("ap-active", p.getAttribute("data-panel") === name);
+      });
+    }
+    tG.onclick = function () { activate(tG, "grades"); };
+    tD.onclick = function () { activate(tD, "debug"); };
+
+    document.body.appendChild(root);
+  }
+
+  function rerender() {
+    var open = root && root.classList.contains("ap-open");
+    if (root) root.remove();
+    build(parse());
+    if (open) root.classList.add("ap-open");
+  }
+
+  function toggle(open) {
+    if (!root) build(parse());
+    var show = open === undefined ? !root.classList.contains("ap-open") : open;
+    root.classList.toggle("ap-open", show);
+    if (!show) sessionStorage.setItem("apDismissed", "1");
+  }
+
+  // Trigger the Angular app to load a menu entry so capture.js records it.
+  function pollUntil(test, timeout) {
+    return new Promise(function (resolve) {
+      var t0 = Date.now();
+      (function tick() {
+        if (test()) return resolve(true);
+        if (Date.now() - t0 > timeout) return resolve(false);
+        setTimeout(tick, 300);
+      })();
+    });
+  }
+  async function ensureData() {
+    var need = [];
+    if (!latest("/menuEntries/1144/searchResult")) need.push(1144);
+    if (!latest("/menuEntries/1036/searchResult")) need.push(1036);
+    if (!need.length) return;
+    var back = location.hash;
+    for (var i = 0; i < need.length; i++) {
+      var id = need[i];
+      location.hash = "#/mainContent/menuEntry/" + id;
+      await pollUntil((function (id) { return function () { return latest("/menuEntries/" + id + "/searchResult"); }; })(id), 9000);
+    }
+    if (back) location.hash = back;
+  }
+
+  async function loadAndRender(force) {
+    if (force) toast("Chargement des notes…");
+    await ensureData();
+    rerender();
+    if (!root.classList.contains("ap-open")) root.classList.add("ap-open");
+  }
+
+  // ------------------------------------------------------------------ init
+  var fab = el("button", { id: "auriga-plus-fab", text: "Auriga+" });
+  fab.onclick = function () {
+    sessionStorage.removeItem("apDismissed");
+    if (!parse().hasTree) loadAndRender(true);
+    else toggle();
+  };
+  document.body.appendChild(fab);
+
+  build(parse());
+  window.addEventListener("auriga-plus:capture", function () {
+    if (root && root.classList.contains("ap-open")) rerender();
+  });
+
+  // Auto take-over (unless dismissed this session).
+  if (sessionStorage.getItem("apDismissed") !== "1") {
+    var m0 = parse();
+    if (m0.hasTree) {
+      root.classList.add("ap-open");
+      rerender();
+    } else {
+      loadAndRender(false);
+    }
+  }
+
+  console.log("%c[Auriga+] UI ready", "color:#1a2b6b;font-weight:bold");
+})();

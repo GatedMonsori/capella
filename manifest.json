@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Auriga+",
+  "version": "0.1.0",
+  "description": "Une interface claire et lisible par-dessus Auriga (Aurion) : notes, moyennes, ECTS, libellés compréhensibles.",
+  "content_scripts": [
+    {
+      "matches": ["https://auriga.epita.fr/*"],
+      "js": ["src/capture.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://auriga.epita.fr/*"],
+      "js": ["src/ui.js"],
+      "css": ["src/ui.css"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ]
+}
