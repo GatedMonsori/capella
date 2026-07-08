@@ -42,13 +42,22 @@ Quand tu ouvres une page de notes d'Auriga, l'interface **s'affiche automatiquem
 ## Structure
 
 ```
-auriga-plus/
-├── manifest.json      # MV3, content scripts sur auriga.epita.fr
-└── src/
-    ├── capture.js     # MAIN world, document_start — hooke fetch/XHR
-    ├── ui.js          # parse Aurion + rend le bulletin
-    └── ui.css
+capella/
+├── manifest.json        # MV3, content scripts sur auriga.epita.fr
+├── src/
+│   ├── capture.js       # MAIN world, document_start — hooke fetch/XHR + Bearer
+│   ├── ui.js            # parse Aurion, arbre/coeffs/ECTS, simulateur, rendu
+│   └── ui.css
+├── package.json         # scripts lint/format (dev only)
+├── .eslintrc.json       # règles ESLint
+├── .prettierrc.json     # format Prettier
+├── .editorconfig
+├── CONTRIBUTING.md      # fork + PR (personne ne peut pousser directement)
+└── LICENSE              # MIT
 ```
+
+> Le dépôt s'appelle `capella` ; en local le dossier a pu rester `auriga-plus` —
+> peu importe, seul le contenu compte pour « Charger l'extension non empaquetée ».
 
 ## Programme-agnostique
 
