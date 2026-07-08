@@ -387,9 +387,10 @@
     var panel = el("div", { class: "ap-panel ap-active", "data-panel": "grades" });
     if (!model.hasTree) {
       var empty = el("div", { class: "ap-empty" });
-      empty.appendChild(el("p", { text: "Notes pas encore chargées." }));
-      var btn = el("button", { class: "ap-btn", text: "Charger mes notes" });
-      btn.onclick = function () { loadAndRender(true); };
+      empty.appendChild(el("p", { text:
+        "Notes pas encore chargées. Ouvre « Mes notes (éval) » puis « Mes notes (synthèse) » dans le menu Auriga — Capella les affichera automatiquement." }));
+      var btn = el("button", { class: "ap-btn", text: "Réessayer" });
+      btn.onclick = function () { rerender(); };
       empty.appendChild(btn);
       panel.appendChild(empty);
       return panel;
@@ -503,7 +504,7 @@
     header.appendChild(brand);
     header.appendChild(el("div", { class: "ap-spacer" }));
     var refresh = el("button", { text: "↻ Recharger" });
-    refresh.onclick = function () { loadAndRender(true); };
+    refresh.onclick = function () { rerender(); toast("Actualisé"); };
     var close = el("button", { text: "✕ Auriga original" });
     close.onclick = function () { toggle(false); };
     header.appendChild(refresh);
@@ -537,11 +538,18 @@
     document.body.appendChild(root);
   }
 
+  function parseSafe() {
+    try { return parse(); }
+    catch (e) { console.warn("[Capella] parse error", e); return { hasTree: false, hasExams: false, semesters: [], name: "", year: "" }; }
+  }
+
   function rerender() {
-    var open = root && root.classList.contains("ap-open");
-    if (root) root.remove();
-    build(parse());
-    if (open) root.classList.add("ap-open");
+    try {
+      var open = root && root.classList.contains("ap-open");
+      if (root) root.remove();
+      build(parseSafe());
+      if (open) root.classList.add("ap-open");
+    } catch (e) { console.warn("[Capella] render error", e); }
   }
 
   function toggle(open) {
@@ -551,62 +559,38 @@
     if (!show) sessionStorage.setItem("apDismissed", "1");
   }
 
-  // Trigger the Angular app to load a menu entry so capture.js records it.
-  function pollUntil(test, timeout) {
-    return new Promise(function (resolve) {
-      var t0 = Date.now();
-      (function tick() {
-        if (test()) return resolve(true);
-        if (Date.now() - t0 > timeout) return resolve(false);
-        setTimeout(tick, 300);
-      })();
-    });
-  }
-  async function ensureData() {
-    var need = [];
-    if (!latest("/menuEntries/1144/searchResult")) need.push(1144);
-    if (!latest("/menuEntries/1036/searchResult")) need.push(1036);
-    if (!need.length) return;
-    var back = location.hash;
-    for (var i = 0; i < need.length; i++) {
-      var id = need[i];
-      location.hash = "#/mainContent/menuEntry/" + id;
-      await pollUntil((function (id) { return function () { return latest("/menuEntries/" + id + "/searchResult"); }; })(id), 9000);
-    }
-    if (back) location.hash = back;
-  }
-
-  async function loadAndRender(force) {
-    if (force) toast("Chargement des notes…");
-    await ensureData();
-    rerender();
-    if (!root.classList.contains("ap-open")) root.classList.add("ap-open");
-  }
+  // NOTE: Capella never navigates the Angular app itself — that risked blanking
+  // the page. It only renders from data the app has already loaded, and takes
+  // over only once real grade data is present.
 
   // ------------------------------------------------------------------ init
-  var fab = el("button", { id: "auriga-plus-fab", text: "Capella" });
-  fab.onclick = function () {
-    sessionStorage.removeItem("apDismissed");
-    if (!parse().hasTree) loadAndRender(true);
-    else toggle();
-  };
-  document.body.appendChild(fab);
+  try {
+    var fab = el("button", { id: "auriga-plus-fab", text: "Capella" });
+    fab.onclick = function () {
+      sessionStorage.removeItem("apDismissed");
+      toggle();
+    };
+    document.body.appendChild(fab);
 
-  build(parse());
-  window.addEventListener("auriga-plus:capture", function () {
-    if (root && root.classList.contains("ap-open")) rerender();
-  });
+    build(parseSafe());
 
-  // Auto take-over (unless dismissed this session).
-  if (sessionStorage.getItem("apDismissed") !== "1") {
-    var m0 = parse();
-    if (m0.hasTree) {
-      root.classList.add("ap-open");
-      rerender();
-    } else {
-      loadAndRender(false);
+    function maybeAutoOpen() {
+      if (!root) return;
+      if (sessionStorage.getItem("apDismissed") === "1") return;
+      if (parseSafe().hasTree && !root.classList.contains("ap-open")) root.classList.add("ap-open");
     }
-  }
 
-  console.log("%c[Capella] UI ready", "color:#1a2b6b;font-weight:bold");
+    // Re-render as the app loads more data; auto-open only when grades exist.
+    window.addEventListener("auriga-plus:capture", function () {
+      try {
+        if (root && root.classList.contains("ap-open")) rerender();
+        maybeAutoOpen();
+      } catch (e) { console.warn("[Capella]", e); }
+    });
+
+    maybeAutoOpen();
+    console.log("%c[Capella] UI ready", "color:#1a2b6b;font-weight:bold");
+  } catch (e) {
+    console.warn("[Capella] init failed (Auriga left untouched):", e);
+  }
 })();
