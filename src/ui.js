@@ -86,6 +86,17 @@
     );
   }
 
+  // Save an object as a downloaded JSON file (handles payloads too big to copy).
+  function downloadJSON(name, obj) {
+    var blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
   function toNum(v) {
     if (v == null) return NaN;
     return parseFloat(String(v).replace(",", "."));
@@ -451,8 +462,8 @@
       }
     }
     console.log("%c[Capella] probe results", "color:#1a2b6b;font-weight:bold", out);
-    copy(JSON.stringify(out, null, 2));
-    toast("Sondage terminé — résultats copiés");
+    downloadJSON("capella-probe.json", out);
+    toast("Sondage terminé — fichier téléchargé (capella-probe.json)");
     return out;
   }
 
@@ -463,7 +474,7 @@
     probe.appendChild(el("h2", { text: "Chercher les coefficients (module → UE)" }));
     probe.appendChild(el("p", { class: "ap-muted", html:
       "Teste les endpoints probables de l'arbre des obligations en réutilisant ta session. " +
-      "Clique, puis colle-moi le résultat (auto-copié) pour que j'intègre les coefficients." }));
+      "Clique : un fichier <b>capella-probe.json</b> est téléchargé (assez gros pour ne pas passer par le presse-papier)." }));
     var pb = el("button", { class: "ap-btn", text: "🔍 Sonder les coefficients" });
     pb.onclick = function () { probeCoefficients(); };
     probe.appendChild(pb);
