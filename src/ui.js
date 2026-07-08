@@ -390,18 +390,82 @@
     return model;
   }
 
-  // --------------------------------------------------------------- render
-  function pill(value, kind) {
-    var col = gradeColor(value);
-    var box = el("span", { class: "ap-grade" });
-    box.style.color = col;
-    box.style.background = gradeTint(value);
-    box.textContent = fmt(value);
-    if (kind === "provisoire") {
-      var s = el("span", { class: "ap-grade-note", text: " prov." });
-      box.appendChild(s);
+  // ------------------------------------------------------------ simulation
+  // In simulation mode the user types hypothetical grades into modules and the
+  // UE + semester averages recompute live, using the real coefficients (which
+  // reproduce Auriga's own averages exactly).
+  var SIM = {};             // module code -> hypothetical grade (/20), as string
+  var simMode = false;
+  var currentModel = null;
+  var projPills = {};       // node code -> grade pill (updated live)
+  var semAvgBoxes = {};     // semester code -> big average box
+  var semEctsBoxes = {};    // semester code -> ECTS line
+
+  // Effective /20 value of a node given the current overrides. Leaves take the
+  // override (or the actual grade); parents are the coefficient-weighted mean of
+  // their children, skipping any that are ungraded.
+  function effectiveValue(node) {
+    if (!node.children.length) {
+      var ov = SIM[node.code];
+      if (ov != null && String(ov).trim() !== "") return toNum(ov);
+      return toNum(node.value);
     }
+    var num = 0, den = 0;
+    node.children.forEach(function (child) {
+      var v = effectiveValue(child);
+      var w = toNum(child.coef);
+      if (!isNaN(v) && !isNaN(w)) { num += v * w; den += w; }
+    });
+    return den ? num / den : NaN;
+  }
+  function displayValue(node) { return simMode ? effectiveValue(node) : toNum(node.value); }
+
+  // --------------------------------------------------------------- render
+  function paintPill(box, value, kind) {
+    box.textContent = fmt(value);
+    box.style.color = gradeColor(value);
+    box.style.background = gradeTint(value);
+    if (kind === "provisoire") box.appendChild(el("span", { class: "ap-grade-note", text: " prov." }));
+  }
+  function pill(value, kind) {
+    var box = el("span", { class: "ap-grade" });
+    paintPill(box, value, kind);
     return box;
+  }
+  function setSemAvg(box, value) {
+    box.textContent = fmt(value);
+    box.style.color = gradeColor(value);
+    box.appendChild(el("span", { class: "ap-sem-avg-max", text: "/20" }));
+  }
+  function semesterEcts(sem) {
+    var total = sem.children.reduce(function (s, c) { return s + (toNum(c.coef) || 0); }, 0);
+    var acquired = sem.children.reduce(function (s, c) {
+      var v = displayValue(c);
+      var okChildren = c.children.every(function (m) {
+        var mv = displayValue(m);
+        return isNaN(mv) || mv >= S.moduleThreshold;
+      });
+      return s + (!isNaN(v) && v >= S.ueThreshold && okChildren ? (toNum(c.coef) || 0) : 0);
+    }, 0);
+    return { total: total, acquired: acquired };
+  }
+
+  // Live-update projected averages/ECTS in place (no full re-render, keeps focus).
+  function recompute() {
+    if (!currentModel) return;
+    (function walk(nodes) {
+      nodes.forEach(function (n) {
+        walk(n.children);
+        if (projPills[n.code]) paintPill(projPills[n.code], effectiveValue(n), null);
+      });
+    })(currentModel.semesters);
+    currentModel.semesters.forEach(function (sem) {
+      if (semAvgBoxes[sem.code]) setSemAvg(semAvgBoxes[sem.code], effectiveValue(sem));
+      if (semEctsBoxes[sem.code]) {
+        var e = semesterEcts(sem);
+        semEctsBoxes[sem.code].textContent = "ECTS : " + e.acquired + " / " + e.total + " validés";
+      }
+    });
   }
 
   function renderExam(x) {
@@ -422,6 +486,21 @@
     return row;
   }
 
+  // Number input a learner can type a hypothetical grade into (leaf modules).
+  function simInput(node) {
+    var inp = el("input", {
+      class: "ap-sim-input", type: "number", step: "0.5", min: "0", max: "20",
+      placeholder: node.value != null ? fmt(node.value) : "—",
+      value: SIM[node.code] != null ? SIM[node.code] : "",
+    });
+    inp.oninput = function () {
+      var v = inp.value.trim();
+      if (v === "") delete SIM[node.code]; else SIM[node.code] = v;
+      recompute();
+    };
+    return inp;
+  }
+
   // Recursive node renderer. depth 0 = semester, 1 = UE, 2+ = module.
   function renderNode(node, depth) {
     if (depth === 0) {
@@ -430,21 +509,16 @@
       var titles = el("div", {});
       titles.appendChild(el("div", { class: "ap-sem-title", text: node.name || node.code }));
       titles.appendChild(el("div", { class: "ap-sem-sub", text: node.kind === "finale" ? "Moyenne finale" : "Moyenne provisoire (semestre en cours)" }));
-      // ECTS: total = sum of UE weights; acquis = UEs with avg ≥ seuil UE and no ECUE below seuil matière.
-      var totalECTS = node.children.reduce(function (s, c) { return s + (toNum(c.coef) || 0); }, 0);
-      if (totalECTS) {
-        var acqECTS = node.children.reduce(function (s, c) {
-          var n = toNum(c.value);
-          var okChildren = c.children.every(function (m) { var mn = toNum(m.value); return isNaN(mn) || mn >= S.moduleThreshold; });
-          return s + (!isNaN(n) && n >= S.ueThreshold && okChildren ? (toNum(c.coef) || 0) : 0);
-        }, 0);
-        titles.appendChild(el("div", { class: "ap-sem-ects", text: "ECTS : " + acqECTS + " / " + totalECTS + " validés" }));
+      var ects = semesterEcts(node);
+      if (ects.total) {
+        var ectsBox = el("div", { class: "ap-sem-ects", text: "ECTS : " + ects.acquired + " / " + ects.total + " validés" });
+        semEctsBoxes[node.code] = ectsBox;
+        titles.appendChild(ectsBox);
       }
       head.appendChild(titles);
       var big = el("div", { class: "ap-sem-avg" });
-      big.style.color = gradeColor(node.value);
-      big.textContent = fmt(node.value);
-      big.appendChild(el("span", { class: "ap-sem-avg-max", text: "/20" }));
+      setSemAvg(big, displayValue(node));
+      semAvgBoxes[node.code] = big;
       head.appendChild(big);
       card.appendChild(head);
       var body = el("div", { class: "ap-sem-body" });
@@ -453,6 +527,7 @@
       return card;
     }
 
+    var isLeaf = !node.children.length;
     var box = el("div", { class: "ap-node ap-node-d" + Math.min(depth, 3) });
     var row = el("div", { class: "ap-node-row" });
     var hasKids = node.children.length || node.exams.length;
@@ -464,9 +539,12 @@
     // (ECUE / modules) carry an internal coefficient.
     if (node.coef != null)
       row.appendChild(el("span", { class: "ap-coef", text: isUE ? fmt(node.coef) + " ECTS" : "coef " + fmt(node.coef) }));
-    var st = isUE ? ueStatus(node.value) : moduleStatus(node.value);
+    var st = isUE ? ueStatus(displayValue(node)) : moduleStatus(displayValue(node));
     if (st) row.appendChild(el("span", { class: "ap-status ap-status-" + st.c, text: st.t }));
-    row.appendChild(pill(node.value, node.kind));
+    if (simMode && isLeaf) row.appendChild(simInput(node));
+    var gradePill = pill(displayValue(node), node.kind);
+    projPills[node.code] = gradePill;
+    row.appendChild(gradePill);
     box.appendChild(row);
 
     var sub = el("div", { class: "ap-node-sub" });
@@ -501,6 +579,23 @@
       panel.appendChild(empty);
       return panel;
     }
+
+    // reset live-update registries for this render
+    currentModel = model;
+    projPills = {};
+    semAvgBoxes = {};
+    semEctsBoxes = {};
+
+    if (simMode) {
+      var simbar = el("div", { class: "ap-simbar" });
+      simbar.appendChild(el("span", { text:
+        "🎯 Simulation : saisis des notes hypothétiques dans les modules ; les moyennes UE, semestre et ECTS se recalculent en direct." }));
+      var reset = el("button", { class: "ap-btn ap-btn-soft", text: "Réinitialiser" });
+      reset.onclick = function () { SIM = {}; rerender(); };
+      simbar.appendChild(reset);
+      panel.appendChild(simbar);
+    }
+
     // editable passing thresholds
     var bar = el("div", { class: "ap-settings" });
     bar.appendChild(el("span", { class: "ap-settings-lbl", text: "Seuils :" }));
@@ -609,6 +704,11 @@
     brand.appendChild(el("span", { class: "ap-sub", text: (model.name || "") + (model.year ? " · " + model.year : "") }));
     header.appendChild(brand);
     header.appendChild(el("div", { class: "ap-spacer" }));
+    if (model.hasTree) {
+      var simBtn = el("button", { class: simMode ? "ap-btn-on" : "", text: simMode ? "🎯 Simulation activée" : "🎯 Simuler" });
+      simBtn.onclick = function () { simMode = !simMode; if (!simMode) SIM = {}; rerender(); };
+      header.appendChild(simBtn);
+    }
     var refresh = el("button", { text: "↻ Recharger" });
     refresh.onclick = function () { rerender(); toast("Actualisé"); };
     var close = el("button", { text: "✕ Auriga original" });

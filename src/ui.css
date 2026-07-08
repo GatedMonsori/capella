@@ -78,8 +78,40 @@
 }
 .ap-btn:hover { background: #22368a; }
 
+.ap-btn-soft { background: rgba(255, 255, 255, 0.85); color: #1a2b6b; border: 1px solid #cfd6ea; }
+.ap-btn-soft:hover { background: #fff; }
+
+.ap-header .ap-btn-on { background: #2ec27e; color: #05231a; }
+.ap-header .ap-btn-on:hover { background: #34d68c; }
+
 .ap-empty { text-align: center; padding: 60px 20px; color: #5a6480; }
 .ap-empty p { margin-bottom: 16px; }
+
+.ap-simbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: space-between;
+  background: #eafaf2;
+  border: 1px solid #b9ead2;
+  color: #1a7f45;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.ap-sim-input {
+  width: 56px;
+  padding: 4px 7px;
+  border: 1px solid #9cd3b6;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+  color: #1a2033;
+}
+.ap-sim-input:focus { outline: 2px solid #9cd3b6; border-color: #2ec27e; }
 
 /* semester card */
 .ap-sem {
